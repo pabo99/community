@@ -60,12 +60,28 @@ behavior lands.
 
 The `api` service runs the FastAPI backend with hot reload in development.
 
-- Liveness: `GET /health/live` returns `{"status": "alive"}`.
+- Liveness: `GET /health/live` returns `{"status": "alive"}` and never touches the database.
+- Readiness: `GET /health/ready` returns `200` when PostgreSQL is reachable and `503` otherwise; it checks no external services.
 - API docs: `/docs` (OpenAPI) are available in development and disabled in production.
 
 Run backend checks through Compose: `make test-backend`, `make lint`,
 `make format`. With `uv` installed locally you can also run `uv run pytest`
-directly from `backend/`.
+directly from `backend/`. `make test-backend` starts a healthy PostgreSQL and
+creates the integration-test database automatically, so no `make up` is needed
+first.
+
+### Database
+
+PostgreSQL schema changes are managed with Alembic.
+
+- `make migrate` applies all migrations to `head` against the development database.
+- `make migration name="description"` autogenerates a new revision.
+- `make db-shell` opens an interactive `psql` shell in the running database.
+
+Integration tests run against a separate `*_test` database on the same
+PostgreSQL service, configured via `TEST_DATABASE_URL`; they never use SQLite
+and refuse to run if `TEST_DATABASE_URL` resolves to the same database as
+`DATABASE_URL`.
 
 ### Configuration
 

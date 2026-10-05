@@ -6,7 +6,7 @@
 COMPOSE := docker compose
 
 .PHONY: up down logs logs-api logs-worker test test-backend test-frontend test-e2e \
-        migrate migration lint format db-shell seed
+        db-up test-db-create migrate migration lint format db-shell seed
 
 # --- Stack lifecycle ---
 # Start the services available at this milestone. The worker runtime behavior
@@ -31,10 +31,28 @@ test: test-backend test-frontend
 
 # Dev-only checks mount the full backend tree (tests are not baked into the
 # image) and sync the dev dependency group into the image's virtualenv.
+# --no-deps keeps lint/format from starting the database; the test target
+# below starts a healthy db itself so developers never need `make up` first.
 BACKEND_RUN := $(COMPOSE) run --rm --no-deps -v ./backend:/app -w /app api
 
-test-backend:
-	$(BACKEND_RUN) uv run --frozen --group dev pytest
+# Start PostgreSQL and wait until it is healthy (used by test-backend).
+db-up:
+	$(COMPOSE) up -d --wait db
+
+# Create the integration-test database (<POSTGRES_DB>_test) on the same service
+# if it is missing. Uses the db container's own env, so Make does not need the
+# value. Safe to run repeatedly; a pre-existing database is left untouched.
+test-db-create: db-up
+	$(COMPOSE) exec -T db sh -c \
+	  'psql -U "$$POSTGRES_USER" -tc "SELECT 1 FROM pg_database WHERE datname = '\''$${POSTGRES_DB}_test'\''" | grep -q 1 \
+	  || psql -U "$$POSTGRES_USER" -c "CREATE DATABASE $${POSTGRES_DB}_test"'
+
+# Runs the full backend suite (unit + real-PostgreSQL integration). Ensures the
+# database service is up/healthy and the test database exists first, so no
+# `make up` is required beforehand. Joins the compose network to reach db.
+test-backend: test-db-create
+	$(COMPOSE) run --rm -v ./backend:/app -w /app api \
+	  uv run --frozen --group dev pytest
 
 test-frontend:
 	@echo "test-frontend: frontend test runner is introduced in M1-04."
@@ -42,15 +60,24 @@ test-frontend:
 test-e2e:
 	@echo "test-e2e: Playwright E2E is introduced in M1-14."
 
-# --- Database / migrations (introduced in M1-03) ---
-migrate:
-	@echo "migrate: Alembic migrations are introduced in M1-03."
+# --- Database / migrations ---
+# Apply all migrations up to head against the development database. Ensures the
+# database is up/healthy first so a fresh checkout works without `make up`.
+migrate: db-up
+	$(COMPOSE) run --rm -v ./backend:/app -w /app api \
+	  uv run --frozen alembic upgrade head
 
-migration:
-	@echo "migration name=\"...\": Alembic autogeneration is introduced in M1-03."
+# Autogenerate a new revision: `make migration name="add something"`.
+# Autogenerate compares models to the database; it produces an empty revision
+# until domain models exist (M1-05 onward).
+migration: db-up
+	@test -n "$(name)" || (echo 'usage: make migration name="description"' && exit 1)
+	$(COMPOSE) run --rm -v ./backend:/app -w /app api \
+	  uv run --frozen alembic revision --autogenerate -m "$(name)"
 
+# Open an interactive psql shell in the running development database.
 db-shell:
-	@echo "db-shell: database shell is introduced in M1-03."
+	$(COMPOSE) exec db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
 
 # --- Code quality (introduced with backend/frontend issues) ---
 lint:

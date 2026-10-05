@@ -2,8 +2,7 @@
 
 Deployment configuration is provided through environment variables
 (technical-design.md §10). The production ``Settings`` model intentionally
-contains only configuration that the backend needs at this milestone. Database
-configuration is introduced in M1-03; external integrations later.
+contains only configuration that the backend needs at this milestone.
 """
 
 from __future__ import annotations
@@ -16,10 +15,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Backend runtime settings loaded from the environment.
 
-    Every field here has a safe development default, so the application can
-    start in local development without extra configuration. Fields become
-    required (no default) only when the backend genuinely cannot run without
-    them; none do yet at M1-02.
+    Most fields have safe development defaults. ``database_url`` is required
+    (no default): the backend genuinely cannot run its persistence paths
+    without it, and we do not ship a production database default
+    (technical-design.md §10).
     """
 
     model_config = SettingsConfigDict(
@@ -32,6 +31,10 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_title: str = "Community Platform API"
     api_version: str = "0.1.0"
+
+    # Required: the SQLAlchemy/psycopg connection URL, e.g.
+    # postgresql+psycopg://user:pass@db:5432/community. No default is provided.
+    database_url: str
 
     @property
     def is_development(self) -> bool:
@@ -46,4 +49,5 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Return cached application settings."""
-    return Settings()
+    # Required fields (e.g. database_url) are populated from the environment.
+    return Settings()  # type: ignore[call-arg]

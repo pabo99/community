@@ -13,6 +13,12 @@ services:
     # PostgreSQL is intentionally NOT published to the host by default.
     volumes:
       - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   api:
     build:
@@ -28,7 +34,8 @@ services:
     volumes:
       - ./backend/app:/app/app
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "${API_PORT}:8000"
 
@@ -41,7 +48,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   frontend:
     build:
