@@ -1,0 +1,47 @@
+# Local development stack for the Community platform.
+# M1-01 defines the intended four-service topology. The frontend/api/worker
+# Dockerfiles are created by later milestone issues (M1-02 backend, M1-04
+# frontend); this file only needs `docker compose config` to validate.
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # PostgreSQL is intentionally NOT published to the host by default.
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    depends_on:
+      - db
+    ports:
+      - "${API_PORT}:8000"
+
+  worker:
+    # api and worker share the backend image/codebase with different commands.
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./frontend
+    env_file:
+      - .env
+    depends_on:
+      - api
+    ports:
+      - "${FRONTEND_PORT}:5173"
+
+volumes:
+  db-data:
