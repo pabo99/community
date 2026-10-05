@@ -56,6 +56,17 @@ defined in the [Makefile](Makefile). Some delegate to tooling that arrives in
 later milestone issues and currently print a short note indicating where that
 behavior lands.
 
+### Backend
+
+The `api` service runs the FastAPI backend with hot reload in development.
+
+- Liveness: `GET /health/live` returns `{"status": "alive"}`.
+- API docs: `/docs` (OpenAPI) are available in development and disabled in production.
+
+Run backend checks through Compose: `make test-backend`, `make lint`,
+`make format`. With `uv` installed locally you can also run `uv run pytest`
+directly from `backend/`.
+
 ### Configuration
 
 Deployment configuration is provided through environment variables.

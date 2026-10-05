@@ -9,8 +9,10 @@ COMPOSE := docker compose
         migrate migration lint format db-shell seed
 
 # --- Stack lifecycle ---
+# Start the services available at this milestone. The worker runtime behavior
+# is introduced in M1-11; until then the worker service is not started.
 up:
-	$(COMPOSE) up -d
+	$(COMPOSE) up -d db api
 
 down:
 	$(COMPOSE) down
@@ -27,8 +29,12 @@ logs-worker:
 # --- Tests (implementations arrive with backend/frontend/e2e issues) ---
 test: test-backend test-frontend
 
+# Dev-only checks mount the full backend tree (tests are not baked into the
+# image) and sync the dev dependency group into the image's virtualenv.
+BACKEND_RUN := $(COMPOSE) run --rm --no-deps -v ./backend:/app -w /app api
+
 test-backend:
-	@echo "test-backend: backend test runner is introduced in M1-02/M1-03."
+	$(BACKEND_RUN) uv run --frozen --group dev pytest
 
 test-frontend:
 	@echo "test-frontend: frontend test runner is introduced in M1-04."
@@ -48,10 +54,12 @@ db-shell:
 
 # --- Code quality (introduced with backend/frontend issues) ---
 lint:
-	@echo "lint: lint tooling is introduced in M1-02 (backend) / M1-04 (frontend)."
+	$(BACKEND_RUN) uv run --frozen --group dev ruff check
+	$(BACKEND_RUN) uv run --frozen --group dev mypy
+	@echo "lint: frontend lint is introduced in M1-04."
 
 format:
-	@echo "format: formatter is introduced in M1-02."
+	$(BACKEND_RUN) uv run --frozen --group dev ruff format
 
 # --- Seed/demo data (introduced in M1-13) ---
 seed:

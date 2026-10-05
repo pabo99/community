@@ -19,6 +19,14 @@ services:
       context: ./backend
     env_file:
       - .env
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    # Development hot reload: uvicorn watches the bind-mounted source. The
+    # image installs its virtualenv at /opt/venv (outside /app), so mounting
+    # ./backend over /app does not shadow installed dependencies.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/app:/app/app
     depends_on:
       - db
     ports:
@@ -26,6 +34,8 @@ services:
 
   worker:
     # api and worker share the backend image/codebase with different commands.
+    # Worker runtime behavior is introduced in M1-11. Until then the service is
+    # defined for the topology but is not started by default (see `make up`).
     build:
       context: ./backend
     env_file:
