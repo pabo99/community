@@ -6,13 +6,13 @@
 COMPOSE := docker compose
 
 .PHONY: up down logs logs-api logs-worker test test-backend test-frontend test-e2e \
-        db-up test-db-create migrate migration lint format db-shell seed
+        db-up test-db-create migrate migration lint format format-check db-shell seed
 
 # --- Stack lifecycle ---
 # Start the services available at this milestone. The worker runtime behavior
 # is introduced in M1-11; until then the worker service is not started.
 up:
-	$(COMPOSE) up -d db api
+	$(COMPOSE) up -d db api frontend
 
 down:
 	$(COMPOSE) down
@@ -54,8 +54,12 @@ test-backend: test-db-create
 	$(COMPOSE) run --rm -v ./backend:/app -w /app api \
 	  uv run --frozen --group dev pytest
 
+# Runs the frontend unit suite once (not watch mode) in the frontend image.
+# --no-deps avoids starting api/db just to run frontend unit tests.
+FRONTEND_RUN := $(COMPOSE) run --rm --no-deps frontend
+
 test-frontend:
-	@echo "test-frontend: frontend test runner is introduced in M1-04."
+	$(FRONTEND_RUN) npm run test:run
 
 test-e2e:
 	@echo "test-e2e: Playwright E2E is introduced in M1-14."
@@ -79,14 +83,24 @@ migration: db-up
 db-shell:
 	$(COMPOSE) exec db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
 
-# --- Code quality (introduced with backend/frontend issues) ---
+# --- Code quality ---
+# lint: backend Ruff + mypy, frontend ESLint + vue-tsc.
 lint:
 	$(BACKEND_RUN) uv run --frozen --group dev ruff check
 	$(BACKEND_RUN) uv run --frozen --group dev mypy
-	@echo "lint: frontend lint is introduced in M1-04."
+	$(FRONTEND_RUN) npm run lint
+	$(FRONTEND_RUN) npm run type-check
 
+# format: backend Ruff format, frontend Prettier (mutating).
 format:
 	$(BACKEND_RUN) uv run --frozen --group dev ruff format
+	$(FRONTEND_RUN) npm run format
+
+# format-check: non-mutating formatting verification for both packages,
+# suitable for validation and future CI.
+format-check:
+	$(BACKEND_RUN) uv run --frozen --group dev ruff format --check
+	$(FRONTEND_RUN) npm run format:check
 
 # --- Seed/demo data (introduced in M1-13) ---
 seed:

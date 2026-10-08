@@ -56,6 +56,18 @@ services:
       context: ./frontend
     env_file:
       - .env
+    environment:
+      # Typed configuration seam for the backend API base URL. No requests are
+      # made from the frontend yet; this is wired for later milestone issues.
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+    # Development hot reload: Vite watches the bind-mounted source. The
+    # anonymous volume on /app/node_modules shields the image's installed
+    # dependencies from being shadowed by the bind mount (analogous to the
+    # backend's /opt/venv).
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       - api
     ports:
