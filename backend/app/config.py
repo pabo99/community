@@ -36,14 +36,52 @@ class Settings(BaseSettings):
     # postgresql+psycopg://user:pass@db:5432/community. No default is provided.
     database_url: str
 
+    # --- GitHub OAuth / sessions -------------------------------------------
+    # These are OPTIONAL for normal startup (health, non-auth routes work
+    # without them). Authentication fails closed with a clear, sanitized error
+    # when attempted without the required credentials (see auth config check).
+    github_oauth_client_id: str | None = None
+    github_oauth_client_secret: str | None = None
+    # Backend callback URL registered with the GitHub OAuth App.
+    github_oauth_redirect_uri: str = "http://localhost:5173/api/auth/github/callback"
+    # Minimal scope: read the authenticated user's public profile.
+    github_oauth_scope: str = "read:user"
+
+    # Trusted destination the browser is sent to after login/logout. Never
+    # taken from a request parameter.
+    frontend_post_login_url: str = "/"
+
+    # Opaque session cookie configuration.
+    session_cookie_name: str = "community_session"
+    # Absolute session lifetime in seconds (default 14 days).
+    session_ttl_seconds: int = 14 * 24 * 60 * 60
+    # Short-lived OAuth state lifetime in seconds.
+    oauth_state_ttl_seconds: int = 10 * 60
+    # CSRF cookie (double-submit) name; readable by JS so the SPA can echo it.
+    csrf_cookie_name: str = "community_csrf"
+    csrf_header_name: str = "X-CSRF-Token"
+
     @property
     def is_development(self) -> bool:
         return self.environment.lower() == "development"
 
     @property
+    def is_production(self) -> bool:
+        return self.environment.lower() == "production"
+
+    @property
     def docs_enabled(self) -> bool:
         """OpenAPI docs are served outside production."""
         return self.environment.lower() != "production"
+
+    @property
+    def cookie_secure(self) -> bool:
+        """Cookies are Secure in production; relaxed for local HTTP dev."""
+        return self.is_production
+
+    @property
+    def github_oauth_configured(self) -> bool:
+        return bool(self.github_oauth_client_id and self.github_oauth_client_secret)
 
 
 @lru_cache

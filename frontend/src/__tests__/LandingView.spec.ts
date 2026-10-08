@@ -1,14 +1,28 @@
-import PrimeVue from "primevue/config";
 import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { createPinia } from "pinia";
+import PrimeVue from "primevue/config";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import LandingView from "@/views/LandingView.vue";
 
 describe("LandingView", () => {
+  beforeEach(() => {
+    // onMounted calls fetchMe(); return anonymous (401) by default.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }),
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   const factory = () =>
     mount(LandingView, {
       global: {
-        plugins: [PrimeVue],
+        plugins: [createPinia(), PrimeVue],
       },
     });
 
@@ -17,13 +31,22 @@ describe("LandingView", () => {
     expect(wrapper.get("h1").text()).toContain("omegaUp Community platform");
   });
 
-  it("offers a GitHub sign-in action that is disabled and marked coming soon", () => {
+  it("offers an actionable GitHub sign-in affordance when anonymous", () => {
     const wrapper = factory();
     const button = wrapper.get("button");
 
-    // The sign-in affordance is present but intentionally not yet functional.
     expect(button.text()).toContain("Sign in with GitHub");
-    expect(button.attributes("disabled")).toBeDefined();
-    expect(wrapper.text()).toContain("coming soon");
+    // The sign-in button is now functional (not disabled).
+    expect(button.attributes("disabled")).toBeUndefined();
+  });
+
+  it("initiates GitHub OAuth when the sign-in button is clicked", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign } as unknown as Location);
+
+    const wrapper = factory();
+    await wrapper.get("button").trigger("click");
+
+    expect(assign).toHaveBeenCalledWith("/api/auth/github/login");
   });
 });

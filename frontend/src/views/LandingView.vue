@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import Button from "primevue/button";
+import { onMounted } from "vue";
 
-// Unauthenticated landing/login view. GitHub OAuth is not implemented yet
-// (it arrives in a later milestone issue), so the sign-in action is disabled
-// and clearly labeled as coming soon rather than appearing broken.
+import { useAuthStore } from "@/stores/auth";
+
+// Unauthenticated landing/login view. Signing in starts the GitHub OAuth flow
+// against the same-origin backend; the backend owns the session cookie.
+const auth = useAuthStore();
+
+onMounted(() => {
+  // Resolve current session (no-op/anonymous if not signed in).
+  void auth.fetchMe();
+});
 </script>
 
 <template>
@@ -18,14 +26,16 @@ import Button from "primevue/button";
       </p>
     </div>
 
-    <div class="flex flex-col items-center gap-2">
-      <Button
-        label="Sign in with GitHub"
-        icon="pi pi-github"
-        disabled
-        aria-describedby="signin-note"
-      />
-      <p id="signin-note" class="text-sm text-surface-500">GitHub sign-in is coming soon.</p>
+    <div v-if="auth.isAuthenticated()" class="flex flex-col items-center gap-3">
+      <p class="text-base">
+        Signed in as
+        <span class="font-semibold">{{ auth.me?.github_username ?? auth.me?.display_name }}</span>
+      </p>
+      <Button label="Sign out" icon="pi pi-sign-out" severity="secondary" @click="auth.logout()" />
+    </div>
+
+    <div v-else class="flex flex-col items-center gap-2">
+      <Button label="Sign in with GitHub" icon="pi pi-github" @click="auth.login()" />
     </div>
   </section>
 </template>

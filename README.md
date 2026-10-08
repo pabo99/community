@@ -70,6 +70,33 @@ directly from `backend/`. `make test-backend` starts a healthy PostgreSQL and
 creates the integration-test database automatically, so no `make up` is needed
 first.
 
+### Authentication
+
+Sign-in uses GitHub OAuth with PostgreSQL-backed server-side sessions. The
+browser holds only an opaque, HttpOnly session cookie; the database stores a
+SHA-256 hash of the token.
+
+Local setup:
+
+1. Create a GitHub OAuth App (GitHub → Settings → Developer settings → OAuth Apps).
+   - Homepage URL: `http://localhost:5173`
+   - Authorization callback URL: `http://localhost:5173/api/auth/github/callback`
+2. Put the client id/secret in your local `.env` (`GITHUB_OAUTH_CLIENT_ID`,
+   `GITHUB_OAUTH_CLIENT_SECRET`). Never commit them.
+3. `make up`, open `http://localhost:5173`, and click "Sign in with GitHub".
+
+The frontend always calls the backend via same-origin `/api` paths. In
+development, Vite proxies `/api` to the backend (`VITE_API_PROXY_TARGET`,
+default `http://api:8000` for Docker; use `http://localhost:8000` for
+host-based dev). **In production, a reverse proxy must serve the frontend and
+backend under the same origin and route `/api` to the backend**, so the
+`SameSite=Lax` session cookie remains first-party. Mutating requests must send
+the double-submit CSRF token (from the readable CSRF cookie) in the
+`X-CSRF-Token` header.
+
+Authentication is optional for startup: health and non-auth routes work without
+OAuth configured; auth endpoints return a clear error until credentials are set.
+
 ### Database
 
 PostgreSQL schema changes are managed with Alembic.

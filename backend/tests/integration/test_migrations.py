@@ -23,12 +23,15 @@ pytestmark = pytest.mark.integration
 # shared migrated test database.
 _EMPTY_DB_NAME = "community_migration_check"
 
-# Baseline (M1-03) and identity (M1-05) revisions.
+# Baseline (M1-03), identity (M1-05), and sessions (M1-06) revisions.
 _BASELINE_REVISION = "e049e161a164"
 _IDENTITY_REVISION = "0b92c4c6d996"
+_SESSIONS_REVISION = "8f8deb9d2cd7"
 
 # Tables introduced by the identity revision.
 _IDENTITY_TABLES = {"persons", "external_identities"}
+# Tables introduced by the sessions revision.
+_SESSION_TABLES = {"user_sessions", "oauth_states"}
 
 
 def _server_url(test_database_url: str) -> str:
@@ -76,8 +79,9 @@ def test_upgrade_head_from_empty_database(empty_database_url: str) -> None:
         # Inspect on a fresh connection so the catalog reflects the migration.
         with engine.connect() as conn:
             tables = set(inspect(conn).get_table_names())
-            # Head creates the identity tables plus Alembic's bookkeeping table.
+            # Head creates identity + session tables plus Alembic's bookkeeping.
             assert _IDENTITY_TABLES.issubset(tables)
+            assert _SESSION_TABLES.issubset(tables)
             assert "alembic_version" in tables
 
             # The applied revision is the current head.
@@ -85,7 +89,7 @@ def test_upgrade_head_from_empty_database(empty_database_url: str) -> None:
             expected_head = script.get_current_head()
             applied = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
         assert applied == expected_head
-        assert expected_head == _IDENTITY_REVISION
+        assert expected_head == _SESSIONS_REVISION
     finally:
         engine.dispose()
 
@@ -107,5 +111,27 @@ def test_identity_revision_upgrade_downgrade_roundtrip(empty_database_url: str) 
             applied = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
         assert not (_IDENTITY_TABLES & tables)
         assert applied == _BASELINE_REVISION
+    finally:
+        engine.dispose()
+
+
+def test_sessions_revision_upgrade_downgrade_roundtrip(empty_database_url: str) -> None:
+    config = _alembic_config(empty_database_url)
+    engine = create_engine(empty_database_url, future=True, poolclass=NullPool)
+    try:
+        # Upgrade to the sessions revision: session tables exist.
+        command.upgrade(config, _SESSIONS_REVISION)
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+        assert _SESSION_TABLES.issubset(tables)
+
+        # Downgrade one step: session tables dropped, identity tables remain.
+        command.downgrade(config, _IDENTITY_REVISION)
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+            applied = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        assert not (_SESSION_TABLES & tables)
+        assert _IDENTITY_TABLES.issubset(tables)
+        assert applied == _IDENTITY_REVISION
     finally:
         engine.dispose()

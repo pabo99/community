@@ -23,5 +23,16 @@ export default defineConfig({
     watch: {
       usePolling: process.env.CHOKIDAR_USEPOLLING === "true",
     },
+    // Same-origin proxy: the browser always talks to the frontend origin and
+    // calls /api/*, so session cookies stay first-party (SameSite=Lax works).
+    // The target is configurable because the backend hostname differs between
+    // Docker ("http://api:8000") and host-based dev ("http://localhost:8000").
+    // Defaults to the Docker service name used by docker-compose.
+    proxy: {
+      "/api": {
+        target: process.env.VITE_API_PROXY_TARGET ?? "http://api:8000",
+        changeOrigin: true,
+      },
+    },
   },
 });
