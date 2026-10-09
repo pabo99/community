@@ -12,15 +12,19 @@ from app.models.external_identity import (
     ExternalIdentity,
 )
 from app.models.person import Person
+from app.models.platform_role import PLATFORM_ROLES, ROLE_SUPERADMIN, PlatformRole
 from app.models.session import OAuthState, UserSession
 
 __all__ = [
     "IDENTITY_PROVIDERS",
+    "PLATFORM_ROLES",
     "PROVIDER_DISCORD",
     "PROVIDER_GITHUB",
     "PROVIDER_OMEGAUP",
+    "ROLE_SUPERADMIN",
     "ExternalIdentity",
     "OAuthState",
     "Person",
+    "PlatformRole",
     "UserSession",
 ]

@@ -14,7 +14,12 @@ describe("auth store", () => {
   });
 
   it("populates me on a successful fetch", async () => {
-    const profile = { id: "p1", display_name: "Ada", github_username: "ada" };
+    const profile = {
+      id: "p1",
+      display_name: "Ada",
+      github_username: "ada",
+      is_superadmin: false,
+    };
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => profile }),
@@ -47,7 +52,7 @@ describe("auth store", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const auth = useAuthStore();
-    auth.me = { id: "p1", display_name: null, github_username: "ada" };
+    auth.me = { id: "p1", display_name: null, github_username: "ada", is_superadmin: false };
     await auth.logout();
 
     expect(auth.me).toBeNull();

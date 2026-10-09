@@ -97,6 +97,26 @@ the double-submit CSRF token (from the readable CSRF cookie) in the
 Authentication is optional for startup: health and non-auth routes work without
 OAuth configured; auth endpoints return a clear error until credentials are set.
 
+### Authorization and superadmin bootstrap
+
+Platform roles are stored in the database (`platform_roles`); the only role at
+this stage is `superadmin`. Authorization is enforced server-side (admin
+endpoints return `401` when anonymous and `403` for authenticated non-admins);
+frontend route guards are a UX convenience only.
+
+To grant the initial superadmin:
+
+1. The target user signs in with GitHub at least once (so their Person and
+   verified GitHub identity exist).
+2. Find their immutable GitHub numeric id: `https://api.github.com/users/<login>`.
+3. Add it to `SUPERADMIN_GITHUB_IDS` in your local `.env` (comma-separated for
+   multiple). Use numeric ids, never usernames.
+4. Run `make bootstrap-admins`.
+
+The command is idempotent and safe to rerun: it grants the role only to the
+configured ids, skips ids that have not signed in yet, and never modifies other
+roles or users.
+
 ### Database
 
 PostgreSQL schema changes are managed with Alembic.

@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.external_identity import PROVIDER_GITHUB
 from app.models.person import Person
 from app.repositories.identity import IdentityRepository
+from app.repositories.role import RoleRepository
 from app.schemas.user import MeResponse
 
 router = APIRouter(prefix="/api", tags=["users"])
@@ -30,4 +31,5 @@ def read_me(
         id=person.id,
         display_name=person.display_name,
         github_username=github_username,
+        is_superadmin=RoleRepository(db).is_superadmin(person.id),
     )

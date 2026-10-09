@@ -6,7 +6,8 @@
 COMPOSE := docker compose
 
 .PHONY: up down logs logs-api logs-worker test test-backend test-frontend test-e2e \
-        db-up test-db-create migrate migration lint format format-check db-shell seed
+        db-up test-db-create migrate migration lint format format-check db-shell \
+        bootstrap-admins seed
 
 # --- Stack lifecycle ---
 # Start the services available at this milestone. The worker runtime behavior
@@ -101,6 +102,14 @@ format:
 format-check:
 	$(BACKEND_RUN) uv run --frozen --group dev ruff format --check
 	$(FRONTEND_RUN) npm run format:check
+
+# --- Authorization bootstrap ---
+# Grant the platform superadmin role to the GitHub numeric ids configured in
+# SUPERADMIN_GITHUB_IDS. Idempotent and safe to rerun. The target user must
+# have signed in at least once so their Person/identity exists.
+bootstrap-admins: db-up
+	$(COMPOSE) run --rm -v ./backend:/app -w /app api \
+	  uv run --frozen python -m app.cli.bootstrap_admins
 
 # --- Seed/demo data (introduced in M1-13) ---
 seed:

@@ -12,6 +12,7 @@ export interface Me {
   id: string;
   display_name: string | null;
   github_username: string | null;
+  is_superadmin: boolean;
 }
 
 export const useAuthStore = defineStore("auth", () => {
@@ -20,6 +21,9 @@ export const useAuthStore = defineStore("auth", () => {
   const loaded = ref(false);
 
   const isAuthenticated = () => me.value !== null;
+  // UX-only: backend authorization is authoritative. Guards derived from this
+  // only hide/show navigation; they never grant access.
+  const isSuperadmin = () => me.value?.is_superadmin === true;
 
   // The login endpoint performs OAuth redirects, so navigate the whole page.
   function login(): void {
@@ -47,5 +51,14 @@ export const useAuthStore = defineStore("auth", () => {
     me.value = null;
   }
 
-  return { me, loading, loaded, isAuthenticated, login, fetchMe, logout };
+  return {
+    me,
+    loading,
+    loaded,
+    isAuthenticated,
+    isSuperadmin,
+    login,
+    fetchMe,
+    logout,
+  };
 });

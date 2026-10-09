@@ -61,6 +61,17 @@ class Settings(BaseSettings):
     csrf_cookie_name: str = "community_csrf"
     csrf_header_name: str = "X-CSRF-Token"
 
+    # --- Authorization bootstrap -------------------------------------------
+    # Comma-separated IMMUTABLE GitHub numeric user IDs to grant the platform
+    # superadmin role via `make bootstrap-admins`. Never usernames. Optional:
+    # empty means the bootstrap command grants nothing.
+    superadmin_github_ids: str = ""
+
+    @property
+    def superadmin_github_id_list(self) -> list[str]:
+        """Parsed, trimmed list of configured superadmin GitHub numeric ids."""
+        return [part.strip() for part in self.superadmin_github_ids.split(",") if part.strip()]
+
     @property
     def is_development(self) -> bool:
         return self.environment.lower() == "development"
