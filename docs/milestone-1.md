@@ -287,6 +287,13 @@ Expose the first real product-management API.
 
 **Dependencies:** M1-07, M1-08.
 
+**Status:** completed. Admin endpoints (superadmin + CSRF) for Programs and
+Editions: list/create/read/update (PATCH). No DELETE (M1-08 uses RESTRICT); no
+lifecycle transition state machine; Project endpoints, frontend (M1-10), and
+omegaUp synchronization deferred. Slugs are immutable; edition `source`/
+`external_id` are immutable; `source=omegaup` is a manually-entered external
+reference only (no synchronization).
+
 ---
 
 ### M1-10 — Implement Edition admin UI

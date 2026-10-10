@@ -72,6 +72,10 @@ class ProgramRepository:
     def get_edition(self, edition_id: uuid.UUID) -> Edition | None:
         return self._session.get(Edition, edition_id)
 
+    def get_edition_by_slug(self, program_id: uuid.UUID, slug: str) -> Edition | None:
+        stmt = select(Edition).where(Edition.program_id == program_id, Edition.slug == slug)
+        return self._session.scalars(stmt).one_or_none()
+
     def list_editions_for_program(self, program_id: uuid.UUID) -> list[Edition]:
         stmt = select(Edition).where(Edition.program_id == program_id).order_by(Edition.slug)
         return list(self._session.scalars(stmt).all())
