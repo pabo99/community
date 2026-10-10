@@ -23,11 +23,13 @@ pytestmark = pytest.mark.integration
 # shared migrated test database.
 _EMPTY_DB_NAME = "community_migration_check"
 
-# Baseline (M1-03), identity (M1-05), sessions (M1-06), roles (M1-07) revisions.
+# Revisions: baseline (M1-03), identity (M1-05), sessions (M1-06), roles
+# (M1-07), program/edition/project (M1-08).
 _BASELINE_REVISION = "e049e161a164"
 _IDENTITY_REVISION = "0b92c4c6d996"
 _SESSIONS_REVISION = "8f8deb9d2cd7"
 _ROLES_REVISION = "7c57bafdf5d6"
+_PROGRAM_REVISION = "1fa4c82c5a08"
 
 # Tables introduced by the identity revision.
 _IDENTITY_TABLES = {"persons", "external_identities"}
@@ -35,6 +37,8 @@ _IDENTITY_TABLES = {"persons", "external_identities"}
 _SESSION_TABLES = {"user_sessions", "oauth_states"}
 # Tables introduced by the roles revision.
 _ROLE_TABLES = {"platform_roles"}
+# Tables introduced by the program/edition/project revision.
+_PROGRAM_TABLES = {"programs", "editions", "projects"}
 
 
 def _server_url(test_database_url: str) -> str:
@@ -82,10 +86,12 @@ def test_upgrade_head_from_empty_database(empty_database_url: str) -> None:
         # Inspect on a fresh connection so the catalog reflects the migration.
         with engine.connect() as conn:
             tables = set(inspect(conn).get_table_names())
-            # Head creates identity + session + role tables plus bookkeeping.
+            # Head creates identity + session + role + program tables plus
+            # Alembic's bookkeeping table.
             assert _IDENTITY_TABLES.issubset(tables)
             assert _SESSION_TABLES.issubset(tables)
             assert _ROLE_TABLES.issubset(tables)
+            assert _PROGRAM_TABLES.issubset(tables)
             assert "alembic_version" in tables
 
             # The applied revision is the current head.
@@ -93,7 +99,7 @@ def test_upgrade_head_from_empty_database(empty_database_url: str) -> None:
             expected_head = script.get_current_head()
             applied = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
         assert applied == expected_head
-        assert expected_head == _ROLES_REVISION
+        assert expected_head == _PROGRAM_REVISION
     finally:
         engine.dispose()
 
@@ -116,6 +122,28 @@ def test_roles_revision_upgrade_downgrade_roundtrip(empty_database_url: str) -> 
         assert not (_ROLE_TABLES & tables)
         assert _SESSION_TABLES.issubset(tables)
         assert applied == _SESSIONS_REVISION
+    finally:
+        engine.dispose()
+
+
+def test_program_revision_upgrade_downgrade_roundtrip(empty_database_url: str) -> None:
+    config = _alembic_config(empty_database_url)
+    engine = create_engine(empty_database_url, future=True, poolclass=NullPool)
+    try:
+        # Upgrade to the program revision: program/edition/project exist.
+        command.upgrade(config, _PROGRAM_REVISION)
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+        assert _PROGRAM_TABLES.issubset(tables)
+
+        # Downgrade one step: program tables dropped, role tables remain.
+        command.downgrade(config, _ROLES_REVISION)
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+            applied = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        assert not (_PROGRAM_TABLES & tables)
+        assert _ROLE_TABLES.issubset(tables)
+        assert applied == _ROLES_REVISION
     finally:
         engine.dispose()
 

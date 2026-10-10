@@ -191,23 +191,27 @@ Introduce platform-level admin authorization while keeping ordinary authenticate
 
 ### M1-08 — Implement Program and Edition domain
 
-Add the minimum reusable program/edition model.
+Add the minimum reusable program/edition/project model.
 
 **Acceptance criteria**
 
-- Program and Edition relational models exist.
-- Edition belongs to a Program.
+- Program, Edition, and Project relational models exist.
+- Edition belongs to a Program; Project belongs to an Edition.
 - Edition supports at least name/title, identifier/slug, lifecycle status, and relevant date boundaries needed by the initial admin screen.
+- Project supports at least name/title and identifier/slug, scoped to its Edition. (Project is the scope that M1-07b mentor assignments attach to.)
 - Domain does not hardcode GSoC as the only program type.
+- Deletion preserves historical data: Program → Edition and Edition → Project use `ON DELETE RESTRICT` rather than cascading. No soft-deletion/archival workflow beyond the Edition lifecycle status.
 - Alembic migration is included.
 - Constraints and tests cover important invariants.
 
 **Note:** the Edition model should anticipate a future source/provenance
-distinction (Community-managed vs. omegaUp-projected) and an optional stable
-external identifier, so later omegaUp ideas/editions integration does not
-require a disruptive schema change (product-design §21.4, technical-design §19).
-Community-native editions must not require omegaUp connectivity. M1-08 need not
-implement the integration — only avoid foreclosing it.
+distinction (Community-managed vs. omegaUp-projected) via a `source` field and
+an optional stable `external_id`, so later omegaUp ideas/editions integration
+does not require a disruptive schema change (product-design §21.4,
+technical-design §19). Community-native editions must not require omegaUp
+connectivity. M1-08 need not implement the integration — only avoid foreclosing
+it. The GSoC *idea* concept is distinct from a Project and is not modeled in
+M1-08 (no one-to-one assumption).
 
 **Dependencies:** M1-03.
 
