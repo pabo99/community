@@ -348,3 +348,194 @@ Frontend route guards are only UX. Backend authorization is authoritative.
 5. Transfer the repository/infrastructure ownership to omegaUp and deploy under the agreed omegaUp environment.
 
 The application should remain portable PostgreSQL software rather than depending on provider-specific database features.
+
+## 20. Product structure: three complementary areas
+
+This section consolidates how the product is organized. It is a structural
+clarification of concepts already described in §7 (contributor dashboard), §8
+(internship/residency experience), §11 (mentors and administration), and §17
+(roles and visibility). It does not replace those sections or expand Milestone 1.
+
+The platform presents three complementary areas, each with a distinct audience
+and purpose:
+
+### 20.1 Personal dashboard / Contributions
+
+The signed-in user's own, personalized space.
+
+- Personalized to the user's own activity and responsibilities.
+- Surfaces the user's GitHub contributions, relevant issues, pull requests, and
+  opportunities to contribute.
+- Experienced contributors and mentors may additionally receive review
+  recommendations here.
+- Focused on actionable recommendations and the user's own contributions, not
+  on administrative metrics.
+- Repository activity and contribution insights that are derived from
+  **public** information must not require platform superadmin privileges. Any
+  authenticated user may see public repository/contribution insights relevant
+  to them; internal mentor-only data (evaluations, rankings) remains gated per
+  §12 and §17.
+
+### 20.2 Programs
+
+The structured program workflows (see §3 Core concepts).
+
+- Programs include GSoC, internships, residencies, and volunteer programs.
+- A Program has Editions; an Edition may contain Projects.
+- Mentors, participants, applications, requirements, reviews, and evaluations
+  are associated at the appropriate Program / Edition / Project scope — never
+  globally.
+- Program rules remain configurable per edition rather than hardcoded for GSoC
+  (§2).
+
+### 20.3 Administration
+
+The superadmin/operator space (see §11, §17, and §22).
+
+- Program and edition management (create/clone/configure).
+- Mentor approvals and assignments.
+- Access control, integration configuration, synchronization, and operational
+  oversight.
+- The superadmin administration dashboard is a **separate** surface from the
+  user's personal dashboard (§20.1). The two must not be conflated: a user may
+  be both a contributor and a superadmin, but the personal and administration
+  experiences are distinct entry points.
+
+These areas share the same identity and authorization foundations (Person,
+ExternalIdentity, platform roles, mentor scoping) but are presented as separate
+navigational contexts.
+
+## 21. omegaUp GSoC ideas integration (future direction)
+
+omegaUp has in-progress work on a GSoC ideas organizer. This section records the
+intended direction so later models stay compatible. It is **not** a commitment
+to a specific API contract, and **no integration is implemented yet**. The API
+contract must not be assumed to exist.
+
+### 21.1 Ownership and authority
+
+- omegaUp remains the authoritative source for the GSoC **idea catalog**, and
+  potentially for published editions and active-edition information.
+- A future omegaUp API may expose editions and their ideas; Community will
+  consume that information.
+- Community does **not** take editorial ownership of idea descriptions. It links
+  omegaUp-sourced ideas/editions to real Community identities, mentors,
+  applications, and participants.
+
+### 21.2 Idea vs. project
+
+- An **idea** is an editorial catalog entry owned by omegaUp (a proposal topic a
+  candidate might pursue).
+- A **project** (§3) is a unit of work being executed within a Community
+  Edition, associated with people and GitHub repositories.
+- These are distinct concepts. An idea may inspire or map to a project, but a
+  project is not merely a copy of an idea, and the two have different owners and
+  lifecycles.
+
+### 21.3 Synchronization and persistence
+
+- Consistent with the GitHub replica policy (§13, technical-design §7), the
+  omegaUp ideas/editions data is a **locally persisted, reconstructible
+  synchronization projection**. Page/API requests read local state; they do not
+  require the omegaUp API to be online.
+- Preserve stable external identifiers (omegaUp idea/edition ids) and edition
+  associations so the projection can be reconstructed and re-linked.
+- Clearly distinguish **omegaUp-owned fields** (idea title/description, edition
+  publication state) from **Community-owned fields** (mentor links,
+  applications, participant associations, internal review/evaluation state).
+
+### 21.4 Interaction with existing Program / Edition / Project models
+
+This direction interacts with the Program/Edition/Project models (M1-08) and
+needs an explicit modeling decision later (tracked as an open decision):
+
+- **Not all Community editions originate in omegaUp.** Internships, residencies,
+  and volunteer programs may be created and managed directly in Community.
+- Editions therefore need a notion of **provenance/source** — e.g. a
+  Community-managed edition vs. an edition projected from omegaUp — plus an
+  optional stable external identifier when the source is omegaUp.
+- The Program/Edition/Project schema must not assume an omegaUp origin, and must
+  not require omegaUp connectivity to create or manage a Community-native
+  edition.
+
+## 22. Admin (superadmin) dashboard concept
+
+A proposed superadmin landing page (the Administration area, §20.3), kept
+deliberately focused rather than a catch-all metrics wall.
+
+It should prioritize, in roughly this order:
+
+1. **Active editions and programs** — what is currently running.
+2. **Pending administrative actions** — things awaiting a decision.
+3. **Mentor assignments** — current project-scoped mentors, with direct
+   assign/revoke (see §23). A mentor request/approval review queue is a future
+   addition gated on eligibility verification (§23.1).
+4. **Relevant participant and program summaries** — high-signal counts, not
+   exhaustive metrics.
+5. **Integration / synchronization status** — GitHub and (future) omegaUp sync
+   freshness and recent failures (distinct from infrastructure health, see
+   technical-design §13).
+6. **Navigation to detailed management pages** — the dashboard orients and
+   routes; deep management lives on dedicated pages.
+
+Explicitly avoid a single giant dashboard that renders every available metric.
+The personal dashboard (§20.1) is the counterpart surface and instead focuses on
+actionable recommendations and the user's own contributions.
+
+## 23. Mentor eligibility and management
+
+This section refines the mentor model in §11. It does not change the
+contributor-visibility rules (§12, §17).
+
+### 23.1 Mentorship is not open self-service
+
+GSoC mentorship is not available to all users as a self-service action. A
+"request mentor" action, if offered at all, must only be **offered** to users
+who are verified as having sufficient permissions on `omegaup/omegaup`.
+
+- A provisional eligibility threshold is **GitHub `Triage` permission or higher**
+  on `omegaup/omegaup`. This threshold is subject to product confirmation.
+- GitHub permission eligibility is **necessary but not sufficient**: it gates who
+  may request/be offered mentorship, but it never automatically grants mentor
+  status.
+- A future public "become a mentor" invitation may add contribution-based
+  criteria; those criteria are out of scope.
+
+Because reliable GitHub repository-permission verification is deferred
+(§23.4, technical-design §18), the **self-service mentor request workflow is not
+built in the initial milestone work**. The first mentor capability (milestone
+issue M1-07b) is **direct assignment by superadmins only** (§23.2). The
+eligible-user request/approval workflow is tracked in `docs/feature-backlog.md`
+and depends on reliable permission verification.
+
+### 23.2 Assignment and approval
+
+- Superadmins **directly assign and revoke** mentors. This is the initial
+  mechanism (M1-07b).
+- A request/approval lifecycle (users request; superadmins approve or reject) is
+  a **future** addition gated on eligibility verification (see §23.1 and the
+  feature backlog); it is not part of the initial direct-assignment work.
+- Mentor permissions are scoped to the relevant **program / edition / project**,
+  never global platform administration (§11, §17).
+- Assignments, revocations, and any future approvals/rejections are recorded
+  with an **auditable history** (actor, action, timestamp, optional note)
+  consistent with §16.
+
+### 23.3 Pool mentors vs. assigned mentors
+
+Preserve the distinction already noted in §11:
+
+- **Shared-pool mentors** assist the whole GSoC candidate pool during the open
+  selection process.
+- **Primary/secondary mentors** are assigned to selected projects or
+  contributors after selection.
+
+The mentor model must represent both without conflating them.
+
+### 23.4 GitHub permission verification (least-privilege, not yet implemented)
+
+Establishing effective repository permissions is a prerequisite for §23.1 and is
+**not implemented**. Current OAuth scopes (`read:user`) do not expose repository
+permission data, so a verification strategy must be designed deliberately. See
+technical-design §18 for the proposed least-privilege options and open
+questions. Do not assume existing scopes suffice.

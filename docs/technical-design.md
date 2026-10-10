@@ -472,3 +472,98 @@ Avoid hardcoding personal domains, usernames, filesystem paths, or repository ow
 - Do not introduce Redis/RabbitMQ/Celery without a demonstrated need and explicit architectural decision.
 - New business rules require tests.
 - Do not bypass failing tests to finish a task.
+
+## 18. GitHub repository-permission verification for mentor eligibility (proposed, not implemented)
+
+Product requirement: a future "request mentor" action (the eligible-user
+request/approval workflow in `docs/feature-backlog.md`, item 9) must be offered
+only to users with sufficient permissions on `omegaup/omegaup` (provisionally
+GitHub `Triage` or higher — subject to product confirmation). See product-design
+§23. The initial mentor capability (milestone issue M1-07b) is direct superadmin
+assignment and does not depend on this verification. This section proposes a
+least-privilege verification strategy for that future workflow. **Nothing here
+is implemented, and no API contract is assumed.**
+
+### 18.1 Why current scopes are insufficient
+
+The OAuth login scope is `read:user` (technical-design §6, M1-06). It yields the
+authenticated user's profile only. It does **not** expose the user's permission
+level on any repository. Repository-permission data requires either a different
+OAuth scope or a GitHub App installation. We must not infer permissions from
+`read:user`.
+
+### 18.2 Candidate approaches (least-privilege first)
+
+Options, roughly from least to most privilege/complexity:
+
+1. **GitHub App installed on the omegaUp org (preferred long-term).**
+   - A GitHub App installed on `omegaup/omegaup` can read collaborator
+     permission levels via the installation token, without each user granting
+     broad personal scopes.
+   - Aligns with technical-design §7 ("A GitHub App is the preferred future
+     organization-level integration when the project moves under omegaUp").
+   - The permission check (`GET /repos/omegaup/omegaup/collaborators/{login}/permission`
+     or the GraphQL equivalent) runs server-side with the App token and returns
+     a role such as `read` / `triage` / `write` / `maintain` / `admin`.
+   - Least-privilege for the *user*: no extra user scope needed; the user only
+     needs their verified GitHub identity (already established at login).
+
+2. **Short-lived elevated OAuth authorization, consumed once.**
+   - At the moment a user attempts to request mentorship, perform a separate,
+     explicit OAuth authorization requesting a narrow scope sufficient to read
+     the user's own repository permission, then discard the token.
+   - More user-facing friction and a broader user grant than option 1; keep only
+     as a fallback if a GitHub App is not yet available.
+
+3. **Admin-attested eligibility (no GitHub call).**
+   - A superadmin records that a user meets the threshold out-of-band.
+   - Always available regardless of integration status; useful as a manual
+     escape hatch and for development/testing.
+
+### 18.3 Design constraints
+
+- **Verification is asynchronous and cached**, consistent with the "no external
+  sync in request paths" guardrail (§17). The permission check runs out of band
+  (a job) or at an explicit user action, and its result is persisted as a
+  short-lived, reconstructible eligibility projection with a checked-at
+  timestamp — not re-fetched on every page load.
+- **Eligibility ≠ role.** A positive permission check only makes the request
+  action available; it never auto-grants mentor status. A superadmin still
+  approves (product-design §23.2).
+- **Fail closed.** If permission cannot be verified (integration down, user not
+  a collaborator), the request action is simply not offered; no implicit grant.
+- **Store the minimum.** Persist the derived eligibility decision and the
+  permission level observed, not GitHub tokens. Never persist an App
+  installation token or a user token beyond its immediate use.
+- **Provenance of the threshold.** The `Triage`-or-higher threshold is a
+  configurable product decision, not a hardcoded constant buried in code.
+
+### 18.4 Open questions
+
+- Is a GitHub App available/approved for `omegaup/omegaup` in the M1 timeframe,
+  or must M1-07b rely on admin-attested eligibility (option 3) initially?
+- Exact threshold mapping (does `maintain`/`admin` imply eligibility; is
+  `write` sufficient, or strictly `triage`+?).
+- How stale may a cached eligibility result be before re-verification?
+
+## 19. omegaUp GSoC ideas/editions synchronization (proposed, not implemented)
+
+Supports product-design §21. **Not implemented; no omegaUp API contract is
+assumed.** Recorded so later models remain compatible.
+
+- Treat omegaUp ideas/editions as an **incremental, reconstructible projection**
+  persisted locally (same pattern as the GitHub replica, §7). Normal requests
+  read local state; the omegaUp API is never required to be online to render a
+  page.
+- Synchronization runs through the existing PostgreSQL-backed job queue and
+  worker (§9), never inside a request handler (§17).
+- Preserve **stable omegaUp identifiers** (idea id, edition id) on the local
+  projection so it can be dropped and rebuilt.
+- Keep a strict boundary between **omegaUp-owned fields** (idea/edition editorial
+  content and publication state) and **Community-owned fields** (links to
+  Community identities, mentors, applications, participants, internal
+  review/evaluation state). The projection stores omegaUp-owned fields as a
+  cache; Community-owned relationships reference the projection by stable id.
+- The Edition model needs a **source/provenance** attribute (Community-managed
+  vs. omegaUp-projected) and an optional external id. Community-native editions
+  (internships, residencies, volunteer) must not require omegaUp connectivity.

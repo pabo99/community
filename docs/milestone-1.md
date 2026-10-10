@@ -56,6 +56,11 @@ Do not implement these in Milestone 1 unless a foundation task strictly requires
 - full program-phase wizard
 - production SOPS/secrets design
 - Neon migration
+- omegaUp GSoC ideas/editions API integration (product-design §21, technical-design §19)
+- GitHub repository-permission verification for mentor eligibility (product-design §23.4, technical-design §18) — design only
+- review recommendation engine, GitHub activity explorer, workload view, and the other items in `docs/feature-backlog.md`
+- self-service mentor request/approval workflow (request form, pending inbox, approve/reject) — deferred to the feature backlog, dependent on GitHub permission verification; M1-07b is direct superadmin assignment only
+- personalized dashboard and onboarding flow
 
 ## Proposed issues
 
@@ -180,6 +185,8 @@ Introduce platform-level admin authorization while keeping ordinary authenticate
 
 **Dependencies:** M1-06.
 
+**Status:** completed.
+
 ---
 
 ### M1-08 — Implement Program and Edition domain
@@ -195,7 +202,69 @@ Add the minimum reusable program/edition model.
 - Alembic migration is included.
 - Constraints and tests cover important invariants.
 
+**Note:** the Edition model should anticipate a future source/provenance
+distinction (Community-managed vs. omegaUp-projected) and an optional stable
+external identifier, so later omegaUp ideas/editions integration does not
+require a disruptive schema change (product-design §21.4, technical-design §19).
+Community-native editions must not require omegaUp connectivity. M1-08 need not
+implement the integration — only avoid foreclosing it.
+
 **Dependencies:** M1-03.
+
+---
+
+### M1-07b — Direct superadmin mentor assignment
+
+Add minimal, auditable, project-scoped mentor assignments managed directly by
+superadmins, building on the M1-07 authorization foundation and the
+Program/Edition/Project model from M1-08. This issue was split out of the
+originally-planned M1-07 scope; see product-design §23.
+
+Mentorship is **not** a self-service feature. Because reliable GitHub
+repository-permission verification is explicitly deferred (product-design
+§23.1/§23.4, technical-design §18), M1-07b does **not** include a public mentor
+request form, a request inbox, or an approval workflow. Mentors are assigned and
+revoked directly by superadmins. The eligible-user mentor request workflow is
+tracked in `docs/feature-backlog.md` and depends on reliable GitHub permission
+verification.
+
+**Acceptance criteria**
+
+- Mentor assignments are scoped to the appropriate program/edition/project
+  (never global platform administration), reusing the Project scope from M1-08.
+- Superadmins can directly assign and revoke mentors.
+- The model distinguishes shared-pool mentors (assisting the whole candidate
+  pool during selection) from primary/secondary mentors assigned to selected
+  projects/contributors (product-design §23.3), even if the UI for the latter is
+  minimal.
+- Database constraints prevent duplicate active mentor assignments for the same
+  person/scope (partial unique index), verified under concurrency.
+- Assignment and revocation are recorded with an auditable history (actor,
+  action, timestamp, optional note), consistent with product-design §16 and §23.2.
+- Minimal frontend: a superadmin can assign and revoke mentors from the
+  administration area. No public request/approval UI.
+- All state-changing endpoints are CSRF-protected and authorization-enforced
+  server-side (401 anonymous, 403 non-admin/non-superadmin).
+- Alembic migration included and reviewed (up/down coverage).
+- Tests: authorization, assign/revoke behavior, duplicate/idempotency,
+  concurrency, and migration up/down.
+
+**Explicitly deferred from M1-07b**
+
+- Self-service mentor request lifecycle (request form, pending inbox,
+  approve/reject) — moved to `docs/feature-backlog.md`, dependent on reliable
+  GitHub repository-permission verification (technical-design §18).
+- GitHub repository-permission eligibility verification (GitHub App / elevated
+  scope) — design only (technical-design §18).
+- omegaUp GSoC ideas/editions integration (product-design §21, technical-design
+  §19).
+- Contribution-based mentor eligibility and the public "become a mentor"
+  invitation.
+- Full onboarding flow and personalized dashboard.
+
+**Dependencies:** M1-07 and M1-08. (M1-08 is sequenced first so Program,
+Edition, and Project are modeled before mentor assignments depend on them. Do
+not introduce a temporary Project model inside M1-07b.)
 
 ---
 

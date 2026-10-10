@@ -10,9 +10,10 @@ stays the source of truth for contest/test activity.
 
 ## Documentation
 
-- [Product design](docs/product-design.md) — product scope, concepts, and workflows.
+- [Product design](docs/product-design.md) — product scope, concepts, workflows, and the three product areas (personal dashboard, programs, administration).
 - [Technical design](docs/technical-design.md) — architecture, stack, and repository shape.
 - [Milestone 1](docs/milestone-1.md) — foundation and first-edition plan.
+- [Feature backlog](docs/feature-backlog.md) — lightweight, non-committal idea backlog.
 - [AGENTS.md](AGENTS.md) — core rules and conventions for contributors and agents.
 
 ## Repository structure
