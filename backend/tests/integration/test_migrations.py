@@ -32,6 +32,8 @@ _ROLES_REVISION = "7c57bafdf5d6"
 _PROGRAM_REVISION = "1fa4c82c5a08"
 _SIMPLIFY_REVISION = "2c7f1e9b4a30"
 _SEED_EXEC_REVISION = "3d8b2f6c1a52"
+# Jobs table (M1-11a).
+_JOBS_REVISION = "4e8a1d6b9f32"
 
 # Tables introduced by the identity revision.
 _IDENTITY_TABLES = {"persons", "external_identities"}
@@ -41,6 +43,8 @@ _SESSION_TABLES = {"user_sessions", "oauth_states"}
 _ROLE_TABLES = {"platform_roles"}
 # Tables introduced by the program/edition/project revision.
 _PROGRAM_TABLES = {"programs", "editions", "projects"}
+# Table introduced by the jobs revision.
+_JOB_TABLES = {"jobs"}
 
 
 def _server_url(test_database_url: str) -> str:
@@ -94,6 +98,7 @@ def test_upgrade_head_from_empty_database(empty_database_url: str) -> None:
             assert _SESSION_TABLES.issubset(tables)
             assert _ROLE_TABLES.issubset(tables)
             assert _PROGRAM_TABLES.issubset(tables)
+            assert _JOB_TABLES.issubset(tables)
             assert "alembic_version" in tables
 
             # The applied revision is the current head.
@@ -101,7 +106,7 @@ def test_upgrade_head_from_empty_database(empty_database_url: str) -> None:
             expected_head = script.get_current_head()
             applied = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
         assert applied == expected_head
-        assert expected_head == _SEED_EXEC_REVISION
+        assert expected_head == _JOBS_REVISION
 
         # Head state: programs has icon/is_standard and no kind; editions has no
         # status column; seed_executions tracking table exists.
@@ -113,6 +118,40 @@ def test_upgrade_head_from_empty_database(empty_database_url: str) -> None:
         assert "kind" not in program_cols
         assert "status" not in edition_cols
         assert "seed_executions" in tables
+    finally:
+        engine.dispose()
+
+
+def test_jobs_revision_upgrade_downgrade_roundtrip(empty_database_url: str) -> None:
+    config = _alembic_config(empty_database_url)
+    engine = create_engine(empty_database_url, future=True, poolclass=NullPool)
+    try:
+        command.upgrade(config, _JOBS_REVISION)
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+            job_cols = {c["name"] for c in inspect(conn).get_columns("jobs")}
+        assert _JOB_TABLES.issubset(tables)
+        # Claim-ownership and scheduling columns required by later commits.
+        assert {
+            "claim_token",
+            "locked_at",
+            "locked_by",
+            "run_at",
+            "attempts",
+            "max_attempts",
+            "last_error",
+            "started_at",
+            "finished_at",
+        }.issubset(job_cols)
+
+        # Downgrade one step: jobs dropped, seed_executions remains.
+        command.downgrade(config, _SEED_EXEC_REVISION)
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+            applied = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        assert not (_JOB_TABLES & tables)
+        assert "seed_executions" in tables
+        assert applied == _SEED_EXEC_REVISION
     finally:
         engine.dispose()
 

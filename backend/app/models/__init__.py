@@ -17,6 +17,7 @@ from app.models.external_identity import (
     PROVIDER_OMEGAUP,
     ExternalIdentity,
 )
+from app.models.job import JOB_STATUSES, Job
 from app.models.person import Person
 from app.models.platform_role import PLATFORM_ROLES, ROLE_SUPERADMIN, PlatformRole
 from app.models.program import PROGRAM_ICONS, Program
@@ -29,6 +30,7 @@ __all__ = [
     "EDITION_SOURCES",
     "EDITION_STATUSES",
     "IDENTITY_PROVIDERS",
+    "JOB_STATUSES",
     "PLATFORM_ROLES",
     "PROGRAM_ICONS",
     "PROVIDER_DISCORD",
@@ -37,6 +39,7 @@ __all__ = [
     "ROLE_SUPERADMIN",
     "Edition",
     "ExternalIdentity",
+    "Job",
     "OAuthState",
     "Person",
     "PlatformRole",
