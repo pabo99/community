@@ -111,6 +111,10 @@ bootstrap-admins: db-up
 	$(COMPOSE) run --rm -v ./backend:/app -w /app api \
 	  uv run --frozen python -m app.cli.bootstrap_admins
 
-# --- Seed/demo data (introduced in M1-13) ---
-seed:
-	@echo "seed: development seed data is introduced in M1-13."
+# --- Data seeds ---
+# Run all pending data seeds (e.g. the standard program catalog). Execution is
+# tracked in seed_executions: idempotent, repeat-safe, concurrency-safe, and it
+# never deletes business data. This is the documented deployment seed command.
+seed: db-up
+	$(COMPOSE) run --rm -v ./backend:/app -w /app api \
+	  uv run --frozen python -m app.cli.seed

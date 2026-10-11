@@ -567,3 +567,62 @@ assumed.** Recorded so later models remain compatible.
 - The Edition model needs a **source/provenance** attribute (Community-managed
   vs. omegaUp-projected) and an optional external id. Community-native editions
   (internships, residencies, volunteer) must not require omegaUp connectivity.
+
+## 20. Seeding and controlled deletion (implemented)
+
+Supports product-design §20.2.1. These mechanisms are implemented as part of the
+M1-10 refinement set.
+
+### 20.1 Seed execution tracking
+
+Seeding is **not** `Base.metadata.create_all()` and **not** an unconditional
+upsert on every start. A `seed_executions` table records each seed that has run,
+keyed by a stable string id (e.g. `standard_catalog_v1`) with a unique
+constraint and an executed-at timestamp. The seed runner:
+
+- checks whether a seed id is already recorded and skips it if so (so a seed runs
+  **at most once**);
+- takes a PostgreSQL **transaction-level advisory lock**
+  (`pg_advisory_xact_lock`) keyed from the seed id, so concurrent `make seed`
+  invocations serialize instead of racing;
+- performs the seed's data operations and inserts the `seed_executions` row in
+  the **same transaction**, so either both commit or both roll back. A failure
+  leaves nothing recorded and the seed can be retried cleanly.
+
+This once-only semantics is the mechanism that prevents a deleted standard
+program from being silently recreated: the standard-catalog seed does not run
+again once recorded. A pure upsert-by-slug bootstrap was rejected for exactly
+this reason — it would resurrect deleted standard records on every run.
+
+The standard-catalog seed itself, within its single execution, inserts only
+missing programs/editions and never overwrites administrator-edited fields. GSoC
+and other existing records (including their UUIDs and dates) are preserved.
+
+`make seed` runs the seed runner (`python -m app.cli.seed`); the previous
+`make bootstrap-programs` command and its CLI were removed in favor of this
+single code path.
+
+### 20.2 Dev-only cleanup command
+
+`python -m app.cli.cleanup_dev_programs` is a controlled maintenance tool for
+removing a small, exact set of obsolete development rows (slugs `2026`,
+`internship`). It is deliberately narrow:
+
+- it targets only those exact slugs — never a broad condition or wildcard;
+- it refuses to touch standard-catalog programs;
+- it refuses to delete anything that has dependent business data;
+- it defaults to a dry run (inspect/report) and requires an explicit `--confirm`
+  flag to delete;
+- it must never run in production, inside a migration, at application startup,
+  or during deployment.
+
+It is not wired into any automated path and is never invoked automatically.
+
+### 20.3 Empty-only deletion enforcement
+
+Program/edition deletion is enforced in the service layer inside a transaction
+and backed by `ON DELETE RESTRICT` foreign keys (M1-08). A program is deletable
+only with zero editions; an edition only with zero projects/participants/mentors.
+A non-empty delete raises a conflict that the API surfaces as `409 Conflict`.
+Deletion never cascades business data. There is no `is_standard`-based protection
+— an empty standard program is deletable like any other.

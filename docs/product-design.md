@@ -388,6 +388,44 @@ The structured program workflows (see §3 Core concepts).
 - Program rules remain configurable per edition rather than hardcoded for GSoC
   (§2).
 
+### 20.2.1 Program catalog, editions, and provenance (M1-10 redesign)
+
+The program model is deliberately small:
+
+- **Program** is a catalog entry (GSoC, Professional Internships, Professional
+  Residencies, Volunteering, or an exceptional admin-created program). The
+  catalog *is* the set of categories, so there is no separate `kind` field. A
+  standard-catalog flag distinguishes seeded programs from exceptional ones;
+  there is no magic "other" record. Program slugs are generated from the name;
+  names, descriptions, and a controlled icon identifier are editable.
+- **Edition** identity is a calendar period: `2026` (annual), `2026-1` (first
+  semester), `2026-2` (second semester). Editions are created from a year +
+  period; the slug, a suggested name, and default dates are generated, and the
+  name and dates remain editable. Internships and residencies stay distinct
+  programs but share this identical Program/Edition workflow.
+- **Edition status is temporal and computed** from the dates against a
+  documented reference date (UTC "today"): `upcoming` (before start), `active`
+  (between start and end, inclusive), `finished` (after end). It is never
+  manually set; an edition with zero participants can still be `active`.
+- **Provenance:** a manually created edition is always `source=community`. Only
+  a future trusted omegaUp integration may create/update `source=omegaup`
+  records with authoritative external identifiers. The admin API can never
+  fabricate omegaUp provenance.
+- **Catalog seeding:** the standard catalog and its initial editions are seeded
+  by an idempotent, version-controlled seed runner (`make seed`), not by schema
+  migrations, so a fresh install is useful immediately. The seed only inserts
+  what is missing and never overwrites administrator edits. **A seed is not a
+  database reset mechanism**; production seeding never indiscriminately deletes.
+  Each seed is tracked by a stable id in a `seed_executions` record and runs at
+  most once, so a standard program an administrator deletes is **not** silently
+  recreated on a later seed run.
+- **Deletion is empty-only.** A superadmin may delete a program only when it has
+  no editions, and an edition only when it has no projects, participants, or
+  mentors. Deleting a standard program is permitted when it is empty — there is
+  no special permanent-protection rule tied to the standard-catalog flag.
+  Deletion never cascades business data; the backend refuses a non-empty delete
+  (returning a conflict) and the UI confirms before deleting.
+
 ### 20.3 Administration
 
 The superadmin/operator space (see §11, §17, and §22).
@@ -507,6 +545,40 @@ built in the initial milestone work**. The first mentor capability (milestone
 issue M1-07b) is **direct assignment by superadmins only** (§23.2). The
 eligible-user request/approval workflow is tracked in `docs/feature-backlog.md`
 and depends on reliable permission verification.
+
+## 24. Institutions (future direction)
+
+This section records the intended direction for modeling institutions. **No
+institution model is implemented yet**; it is captured here so later work stays
+compatible, and it does not expand Milestone 1.
+
+Internships and residencies are run with partner institutions (universities,
+companies), and contributors are often affiliated with an institution. The model
+should treat institutions as first-class, independent entities rather than free
+text embedded in a contributor profile or an edition.
+
+Direction and constraints:
+
+- **Institutions are independent entities.** An institution exists on its own
+  and may relate to many contributors and many programs/editions over time. It
+  is not owned by a single contributor or a single edition.
+- **Contributor affiliations.** A contributor may be affiliated with an
+  institution (for example, the university a residency participant attends). A
+  contributor's affiliation can change over time.
+- **Preserve the institution at the time of participation.** When a contributor
+  participates in an edition, the institution relevant to that participation must
+  be preserved on the participation record, so later changes to the
+  contributor's current affiliation do not rewrite history. The participating
+  institutions of a past edition are derived from its participation records, not
+  from contributors' present-day affiliations.
+- **Distinguish two roles an institution can play.** A
+  **contributor-represented** institution is the one a participant is affiliated
+  with. A **program-partner** institution is one that partners with a
+  program/edition (hosting a residency, sponsoring internships). The model must
+  keep these distinct; the same institution may act in either or both roles.
+
+The relational modeling, constraints, and any admin UI are deferred and must be
+designed deliberately when institutions are implemented.
 
 ### 23.2 Assignment and approval
 

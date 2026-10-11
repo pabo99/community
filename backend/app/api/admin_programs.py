@@ -1,30 +1,35 @@
-"""Admin Program/Edition management API (M1-09).
+"""Admin Program/Edition management API (M1-10 redesign).
 
 All endpoints require platform superadmin authorization (reusing M1-07's
 ``require_superadmin``); state-changing endpoints additionally require the
-double-submit CSRF check (``require_csrf``). ORM models are never returned
-directly — explicit Pydantic response schemas are used throughout.
+double-submit CSRF check. ORM models are never returned directly.
 
-No DELETE endpoints (M1-08 uses ON DELETE RESTRICT to preserve history). No
-lifecycle transition state machine. Project endpoints and omegaUp
-synchronization are out of scope.
+Program slugs are generated from the name. Editions are created from a year +
+period; the admin API never sets provenance (manual editions are always
+``source=community``) nor status (status is computed from dates). No DELETE
+endpoints (M1-08 uses ON DELETE RESTRICT).
 """
 
 from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth.authz import require_superadmin
 from app.auth.dependencies import require_csrf
 from app.db.session import get_db
 from app.schemas.edition import EditionCreate, EditionResponse, EditionUpdate
-from app.schemas.program import ProgramCreate, ProgramResponse, ProgramUpdate
+from app.schemas.program import (
+    ActiveEditionSummary,
+    ProgramCreate,
+    ProgramListItem,
+    ProgramResponse,
+    ProgramUpdate,
+)
 from app.services.program import ConflictError, ProgramService, ValidationError
 
-# Every route depends on require_superadmin -> 401 anonymous, 403 non-admin.
 router = APIRouter(
     prefix="/api/admin",
     tags=["admin-programs"],
@@ -37,18 +42,26 @@ def _conflict(exc: ConflictError) -> HTTPException:
 
 
 def _unprocessable(exc: ValidationError) -> HTTPException:
-    # 422 Unprocessable Content (status code 422); the numeric literal avoids a
-    # Starlette deprecation of the older constant name.
     return HTTPException(status_code=422, detail=str(exc))
 
 
 # --- Programs ----------------------------------------------------------------
 
 
-@router.get("/programs", response_model=list[ProgramResponse])
-def list_programs(db: Session = Depends(get_db)) -> list[ProgramResponse]:
+@router.get("/programs", response_model=list[ProgramListItem])
+def list_programs(db: Session = Depends(get_db)) -> list[ProgramListItem]:
     service = ProgramService(db)
-    return [ProgramResponse.model_validate(p) for p in service.list_programs()]
+    items: list[ProgramListItem] = []
+    for program in service.list_programs():
+        active = service.active_editions(program.id)
+        items.append(
+            ProgramListItem(
+                **ProgramResponse.model_validate(program).model_dump(),
+                edition_count=service.edition_count(program.id),
+                active_editions=[ActiveEditionSummary.model_validate(e) for e in active],
+            )
+        )
+    return items
 
 
 @router.post(
@@ -61,14 +74,28 @@ def create_program(payload: ProgramCreate, db: Session = Depends(get_db)) -> Pro
     service = ProgramService(db)
     try:
         program = service.create_program(
-            slug=payload.slug,
-            name=payload.name,
-            kind=payload.kind,
-            description=payload.description,
+            name=payload.name, description=payload.description, icon=payload.icon
         )
     except ConflictError as exc:
         raise _conflict(exc) from exc
     return ProgramResponse.model_validate(program)
+
+
+@router.delete(
+    "/programs/{program_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_csrf)],
+)
+def delete_program(program_id: uuid.UUID, db: Session = Depends(get_db)) -> Response:
+    service = ProgramService(db)
+    program = service.get_program(program_id)
+    if program is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found.")
+    try:
+        service.delete_program(program)
+    except ConflictError as exc:
+        raise _conflict(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/programs/{program_id}", response_model=ProgramResponse)
@@ -95,8 +122,8 @@ def update_program(
     updated = service.update_program(
         program,
         name=payload.name,
-        kind=payload.kind,
         description=payload.description,
+        icon=payload.icon,
         provided=set(payload.model_fields_set),
     )
     return ProgramResponse.model_validate(updated)
@@ -105,10 +132,7 @@ def update_program(
 # --- Editions ----------------------------------------------------------------
 
 
-@router.get(
-    "/programs/{program_id}/editions",
-    response_model=list[EditionResponse],
-)
+@router.get("/programs/{program_id}/editions", response_model=list[EditionResponse])
 def list_editions(program_id: uuid.UUID, db: Session = Depends(get_db)) -> list[EditionResponse]:
     service = ProgramService(db)
     if service.get_program(program_id) is None:
@@ -133,17 +157,34 @@ def create_edition(
     try:
         edition = service.create_edition(
             program=program,
-            slug=payload.slug,
+            year=payload.year,
+            period=payload.period,
             name=payload.name,
-            status=payload.status,
             starts_on=payload.starts_on,
             ends_on=payload.ends_on,
-            source=payload.source,
-            external_id=payload.external_id,
         )
+    except ValidationError as exc:
+        raise _unprocessable(exc) from exc
     except ConflictError as exc:
         raise _conflict(exc) from exc
     return EditionResponse.model_validate(edition)
+
+
+@router.delete(
+    "/editions/{edition_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_csrf)],
+)
+def delete_edition(edition_id: uuid.UUID, db: Session = Depends(get_db)) -> Response:
+    service = ProgramService(db)
+    edition = service.get_edition(edition_id)
+    if edition is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Edition not found.")
+    try:
+        service.delete_edition(edition)
+    except ConflictError as exc:
+        raise _conflict(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/editions/{edition_id}", response_model=EditionResponse)
@@ -171,7 +212,6 @@ def update_edition(
         updated = service.update_edition(
             edition,
             name=payload.name,
-            status=payload.status,
             starts_on=payload.starts_on,
             ends_on=payload.ends_on,
             provided=payload.provided_fields(),

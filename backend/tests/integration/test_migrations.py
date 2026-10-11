@@ -24,12 +24,14 @@ pytestmark = pytest.mark.integration
 _EMPTY_DB_NAME = "community_migration_check"
 
 # Revisions: baseline (M1-03), identity (M1-05), sessions (M1-06), roles
-# (M1-07), program/edition/project (M1-08).
+# (M1-07), program/edition/project (M1-08), simplify-domain (M1-10 redesign).
 _BASELINE_REVISION = "e049e161a164"
 _IDENTITY_REVISION = "0b92c4c6d996"
 _SESSIONS_REVISION = "8f8deb9d2cd7"
 _ROLES_REVISION = "7c57bafdf5d6"
 _PROGRAM_REVISION = "1fa4c82c5a08"
+_SIMPLIFY_REVISION = "2c7f1e9b4a30"
+_SEED_EXEC_REVISION = "3d8b2f6c1a52"
 
 # Tables introduced by the identity revision.
 _IDENTITY_TABLES = {"persons", "external_identities"}
@@ -99,7 +101,121 @@ def test_upgrade_head_from_empty_database(empty_database_url: str) -> None:
             expected_head = script.get_current_head()
             applied = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
         assert applied == expected_head
-        assert expected_head == _PROGRAM_REVISION
+        assert expected_head == _SEED_EXEC_REVISION
+
+        # Head state: programs has icon/is_standard and no kind; editions has no
+        # status column; seed_executions tracking table exists.
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+            program_cols = {c["name"] for c in inspect(conn).get_columns("programs")}
+            edition_cols = {c["name"] for c in inspect(conn).get_columns("editions")}
+        assert {"icon", "is_standard"}.issubset(program_cols)
+        assert "kind" not in program_cols
+        assert "status" not in edition_cols
+        assert "seed_executions" in tables
+    finally:
+        engine.dispose()
+
+
+def test_seed_executions_revision_upgrade_downgrade_roundtrip(empty_database_url: str) -> None:
+    config = _alembic_config(empty_database_url)
+    engine = create_engine(empty_database_url, future=True, poolclass=NullPool)
+    try:
+        command.upgrade(config, _SEED_EXEC_REVISION)
+        with engine.connect() as conn:
+            assert "seed_executions" in set(inspect(conn).get_table_names())
+
+        command.downgrade(config, _SIMPLIFY_REVISION)
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+            applied = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        assert "seed_executions" not in tables
+        assert applied == _SIMPLIFY_REVISION
+    finally:
+        engine.dispose()
+
+
+def test_simplify_revision_upgrade_downgrade_roundtrip(empty_database_url: str) -> None:
+    config = _alembic_config(empty_database_url)
+    engine = create_engine(empty_database_url, future=True, poolclass=NullPool)
+    try:
+        command.upgrade(config, _SIMPLIFY_REVISION)
+        with engine.connect() as conn:
+            cols = {c["name"] for c in inspect(conn).get_columns("programs")}
+        assert "icon" in cols and "kind" not in cols
+
+        # Downgrade one step restores the old columns (kind/status) and makes
+        # dates nullable again.
+        command.downgrade(config, _PROGRAM_REVISION)
+        with engine.connect() as conn:
+            program_cols = {c["name"] for c in inspect(conn).get_columns("programs")}
+            edition_cols = {c["name"] for c in inspect(conn).get_columns("editions")}
+            applied = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        assert "kind" in program_cols and "icon" not in program_cols
+        assert "status" in edition_cols
+        assert applied == _PROGRAM_REVISION
+    finally:
+        engine.dispose()
+
+
+def test_simplify_revision_backfills_edition_dates_from_slug(empty_database_url: str) -> None:
+    # Create a pre-simplify DB with an edition that has NULL dates and a
+    # period-encoding slug; the migration must backfill annual/semester dates.
+    config = _alembic_config(empty_database_url)
+    engine = create_engine(empty_database_url, future=True, poolclass=NullPool)
+    try:
+        command.upgrade(config, _PROGRAM_REVISION)
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO programs (id, slug, name, kind, created_at, updated_at) "
+                    "VALUES (gen_random_uuid(), 'gsoc', 'GSoC', 'gsoc', now(), now())"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO editions (id, program_id, slug, name, status, source, "
+                    "created_at, updated_at) "
+                    "SELECT gen_random_uuid(), id, '2026-2', 'E', 'completed', 'community', "
+                    "now(), now() FROM programs WHERE slug = 'gsoc'"
+                )
+            )
+
+        command.upgrade(config, _SIMPLIFY_REVISION)
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT starts_on, ends_on FROM editions WHERE slug = '2026-2'")
+            ).one()
+        # Second semester defaults.
+        assert str(row[0]) == "2026-07-01"
+        assert str(row[1]) == "2026-12-31"
+    finally:
+        engine.dispose()
+
+
+def test_simplify_revision_fails_clearly_on_unbackfillable_edition(empty_database_url: str) -> None:
+    config = _alembic_config(empty_database_url)
+    engine = create_engine(empty_database_url, future=True, poolclass=NullPool)
+    try:
+        command.upgrade(config, _PROGRAM_REVISION)
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO programs (id, slug, name, kind, created_at, updated_at) "
+                    "VALUES (gen_random_uuid(), 'gsoc', 'GSoC', 'gsoc', now(), now())"
+                )
+            )
+            # NULL dates AND a slug that does not encode a period.
+            conn.execute(
+                text(
+                    "INSERT INTO editions (id, program_id, slug, name, status, source, "
+                    "created_at, updated_at) "
+                    "SELECT gen_random_uuid(), id, 'legacy', 'E', 'completed', 'community', "
+                    "now(), now() FROM programs WHERE slug = 'gsoc'"
+                )
+            )
+        with pytest.raises(Exception, match="Cannot backfill edition dates"):
+            command.upgrade(config, _SIMPLIFY_REVISION)
     finally:
         engine.dispose()
 

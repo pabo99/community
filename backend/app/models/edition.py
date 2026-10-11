@@ -1,22 +1,34 @@
 """Edition domain model.
 
-An Edition is a concrete occurrence of a Program, e.g. "GSoC 2027"
-(product-design.md §3). An Edition owns one or more Projects.
+An Edition is a concrete occurrence of a Program for a calendar period, e.g.
+"GSoC 2026" (product-design.md §3). An Edition owns one or more Projects.
 
-Provenance (product-design.md §21.4, technical-design.md §19): most editions are
-Community-managed; some future GSoC editions may be projected from omegaUp. The
-``source`` field records origin and ``external_id`` carries the stable upstream
-identifier when the source is not Community-native. No omegaUp API call or
-synchronization is implemented here — only the columns and constraints so a
-later integration does not require a disruptive schema change. Community-native
-editions never require omegaUp connectivity.
+Identity is a calendar-period slug:
+- annual:          ``2026``   (Jan 1 - Dec 31)
+- first semester:  ``2026-1`` (Jan 1 - Jun 30)
+- second semester: ``2026-2`` (Jul 1 - Dec 31)
+
+The slug is the single source of truth for the period; the period is derived
+from it, not stored. ``starts_on``/``ends_on`` default from the period and are
+editable (GSoC's real activity window differs from the calendar year).
+
+Status is NOT stored. It is a temporal status computed from the dates relative
+to a documented reference date (UTC "today", see ``compute_status``):
+- ``upcoming``:  today < starts_on
+- ``active``:    starts_on <= today <= ends_on (inclusive)
+- ``finished``:  today > ends_on
+
+Provenance: ``source`` records origin. Manually created editions are always
+``community``; only a future trusted omegaUp integration may create/update
+``omegaup`` records with authoritative ``external_id`` values. No sync here.
 """
 
 from __future__ import annotations
 
+import re
 import uuid
-from datetime import date, datetime
-from typing import TYPE_CHECKING, Final
+from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING, Final, Literal
 
 from sqlalchemy import (
     CheckConstraint,
@@ -38,53 +50,108 @@ if TYPE_CHECKING:
     from app.models.program import Program
     from app.models.project import Project
 
-# Lifecycle status.
-EDITION_STATUS_DRAFT: Final = "draft"
-EDITION_STATUS_OPEN: Final = "open"
-EDITION_STATUS_IN_PROGRESS: Final = "in_progress"
-EDITION_STATUS_COMPLETED: Final = "completed"
-EDITION_STATUS_ARCHIVED: Final = "archived"
-EDITION_STATUSES: Final = (
-    EDITION_STATUS_DRAFT,
-    EDITION_STATUS_OPEN,
-    EDITION_STATUS_IN_PROGRESS,
-    EDITION_STATUS_COMPLETED,
-    EDITION_STATUS_ARCHIVED,
-)
+# Calendar period of an edition (derived from the slug; not stored).
+PERIOD_ANNUAL: Final = "annual"
+PERIOD_FIRST_SEMESTER: Final = "first_semester"
+PERIOD_SECOND_SEMESTER: Final = "second_semester"
+EDITION_PERIODS: Final = (PERIOD_ANNUAL, PERIOD_FIRST_SEMESTER, PERIOD_SECOND_SEMESTER)
+EditionPeriod = Literal["annual", "first_semester", "second_semester"]
 
-# Provenance / source of truth for the edition.
+# Temporal status (computed; not stored).
+STATUS_UPCOMING: Final = "upcoming"
+STATUS_ACTIVE: Final = "active"
+STATUS_FINISHED: Final = "finished"
+EDITION_STATUSES: Final = (STATUS_UPCOMING, STATUS_ACTIVE, STATUS_FINISHED)
+EditionStatus = Literal["upcoming", "active", "finished"]
+
+# Provenance.
 EDITION_SOURCE_COMMUNITY: Final = "community"
 EDITION_SOURCE_OMEGAUP: Final = "omegaup"
 EDITION_SOURCES: Final = (EDITION_SOURCE_COMMUNITY, EDITION_SOURCE_OMEGAUP)
 
-_STATUSES_SQL: Final = ", ".join(f"'{s}'" for s in EDITION_STATUSES)
 _SOURCES_SQL: Final = ", ".join(f"'{s}'" for s in EDITION_SOURCES)
+
+_SLUG_RE: Final = re.compile(r"^(?P<year>\d{4})(?:-(?P<period>[12]))?$")
+
+
+class InvalidEditionSlugError(ValueError):
+    """Raised when an edition slug does not encode a valid calendar period."""
+
+
+def period_of_slug(slug: str) -> EditionPeriod:
+    """Return the calendar period encoded by an edition slug.
+
+    Raises InvalidEditionSlugError if the slug is not ``YYYY``/``YYYY-1``/
+    ``YYYY-2`` (used to fail clearly rather than invent a period).
+    """
+    match = _SLUG_RE.match(slug)
+    if not match:
+        raise InvalidEditionSlugError(f"Edition slug '{slug}' is not a valid calendar period.")
+    suffix = match.group("period")
+    if suffix is None:
+        return PERIOD_ANNUAL
+    return PERIOD_FIRST_SEMESTER if suffix == "1" else PERIOD_SECOND_SEMESTER
+
+
+def slug_for(year: int, period: EditionPeriod) -> str:
+    """Build an edition slug from a year and period."""
+    if period == PERIOD_ANNUAL:
+        return f"{year}"
+    return f"{year}-{'1' if period == PERIOD_FIRST_SEMESTER else '2'}"
+
+
+def default_dates(year: int, period: EditionPeriod) -> tuple[date, date]:
+    """Return the default (starts_on, ends_on) for a year and period."""
+    if period == PERIOD_FIRST_SEMESTER:
+        return date(year, 1, 1), date(year, 6, 30)
+    if period == PERIOD_SECOND_SEMESTER:
+        return date(year, 7, 1), date(year, 12, 31)
+    return date(year, 1, 1), date(year, 12, 31)
+
+
+def default_dates_for_slug(slug: str) -> tuple[date, date]:
+    """Return default dates for an edition slug (fails clearly on bad slugs)."""
+    match = _SLUG_RE.match(slug)
+    if not match:
+        raise InvalidEditionSlugError(f"Edition slug '{slug}' is not a valid calendar period.")
+    year = int(match.group("year"))
+    return default_dates(year, period_of_slug(slug))
+
+
+def today_utc() -> date:
+    """Reference 'today' for temporal status: the current UTC calendar date."""
+    return datetime.now(UTC).date()
+
+
+def compute_status(
+    starts_on: date, ends_on: date, *, reference: date | None = None
+) -> EditionStatus:
+    """Compute temporal status from the date range vs. the reference date."""
+    ref = reference or today_utc()
+    if ref < starts_on:
+        return STATUS_UPCOMING
+    if ref > ends_on:
+        return STATUS_FINISHED
+    return STATUS_ACTIVE
 
 
 class Edition(Base):
-    """A concrete occurrence of a Program."""
+    """A concrete occurrence of a Program for a calendar period."""
 
     __tablename__ = "editions"
 
     __table_args__ = (
-        CheckConstraint(f"status IN ({_STATUSES_SQL})", name="status_valid"),
         CheckConstraint(f"source IN ({_SOURCES_SQL})", name="source_valid"),
-        # Date boundaries, when both present, must be ordered.
-        CheckConstraint(
-            "starts_on IS NULL OR ends_on IS NULL OR ends_on >= starts_on",
-            name="dates_ordered",
-        ),
-        # A Community-native edition has no external id; a non-community source
-        # must carry a non-empty external id.
+        CheckConstraint("ends_on >= starts_on", name="dates_ordered"),
+        # A community edition has no external id; a non-community source must
+        # carry a non-empty external id (future-integration invariant).
         CheckConstraint(
             "(source = 'community' AND external_id IS NULL) "
             "OR (source <> 'community' AND external_id IS NOT NULL "
             "AND length(external_id) > 0)",
             name="external_id_matches_source",
         ),
-        # Slugs are unique within a program (e.g. "2027" per program).
         UniqueConstraint("program_id", "slug", name="uq_editions_program_id_slug"),
-        # A given upstream edition maps to exactly one Community edition.
         Index(
             "uq_editions_source_external_id",
             "source",
@@ -97,20 +164,17 @@ class Edition(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     program_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        # Preserve history: deleting a program with editions is rejected.
         ForeignKey("programs.id", ondelete="RESTRICT"),
         index=True,
     )
 
     slug: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(255))
-    status: Mapped[str] = mapped_column(String(32), default=EDITION_STATUS_DRAFT)
-
-    starts_on: Mapped[date | None] = mapped_column(Date, default=None)
-    ends_on: Mapped[date | None] = mapped_column(Date, default=None)
+    # Dates are required: temporal status is derived from them.
+    starts_on: Mapped[date] = mapped_column(Date)
+    ends_on: Mapped[date] = mapped_column(Date)
 
     source: Mapped[str] = mapped_column(String(32), default=EDITION_SOURCE_COMMUNITY)
-    # Stable upstream identifier when the edition is not Community-native.
     external_id: Mapped[str | None] = mapped_column(String(255), default=None)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -123,3 +187,11 @@ class Edition(Base):
 
     program: Mapped[Program] = relationship(back_populates="editions")
     projects: Mapped[list[Project]] = relationship(back_populates="edition")
+
+    @property
+    def period(self) -> EditionPeriod:
+        return period_of_slug(self.slug)
+
+    @property
+    def status(self) -> EditionStatus:
+        return compute_status(self.starts_on, self.ends_on)

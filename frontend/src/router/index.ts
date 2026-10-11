@@ -12,11 +12,34 @@ const router = createRouter({
       component: LandingView,
     },
     {
+      // Administration workspace. All admin screens share the AdminLayout shell
+      // (left sidebar). UX guard only; the backend enforces authorization.
       path: "/admin",
-      name: "admin",
-      // Lazy-loaded. UX guard only; the backend enforces authorization.
-      component: () => import("@/views/AdminView.vue"),
+      // Lazy-loaded: the admin shell is not needed for the initial landing render.
+      component: () => import("@/layouts/AdminLayout.vue"),
       meta: { requiresSuperadmin: true },
+      children: [
+        {
+          path: "",
+          name: "admin",
+          component: () => import("@/views/AdminView.vue"),
+        },
+        {
+          path: "programs",
+          name: "admin-programs",
+          component: () => import("@/views/admin/ProgramsListView.vue"),
+        },
+        {
+          path: "programs/:programId",
+          name: "admin-program-detail",
+          component: () => import("@/views/admin/ProgramDetailView.vue"),
+        },
+        {
+          path: "editions/:editionId",
+          name: "admin-edition-detail",
+          component: () => import("@/views/admin/EditionDetailView.vue"),
+        },
+      ],
     },
     {
       path: "/:pathMatch(.*)*",
@@ -29,9 +52,10 @@ const router = createRouter({
 
 // Frontend route guard is a UX convenience only: it hides admin routes from
 // non-admins. It is NOT a security boundary — the backend returns 401/403
-// regardless of what the SPA renders.
+// regardless of what the SPA renders. The guard checks the matched records so
+// the meta flag set on the parent `/admin` route protects every child.
 router.beforeEach(async (to) => {
-  if (!to.meta.requiresSuperadmin) {
+  if (!to.matched.some((record) => record.meta.requiresSuperadmin)) {
     return true;
   }
   const auth = useAuthStore();

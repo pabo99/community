@@ -118,6 +118,83 @@ The command is idempotent and safe to rerun: it grants the role only to the
 configured ids, skips ids that have not signed in yet, and never modifies other
 roles or users.
 
+### Seeding the standard program catalog
+
+A fresh installation should have the standard program catalog available without
+manual data entry. Run:
+
+```bash
+make seed
+```
+
+This runs the version-controlled seed runner, which applies any pending seeds
+that have not yet executed. The standard-catalog seed (`standard_catalog_v1`)
+ensures the four standard programs (Google Summer of Code, Professional
+Internships, Professional Residencies, Volunteering) and their initial 2026
+editions exist:
+
+| Program                   | Slug           | Editions          |
+| ------------------------- | -------------- | ----------------- |
+| Google Summer of Code     | `gsoc`         | `2026` (annual)   |
+| Professional Internships  | `internships`  | `2026-1`, `2026-2`|
+| Professional Residencies  | `residencies`  | `2026-1`, `2026-2`|
+| Volunteering              | `volunteering` | `2026` (annual)   |
+
+**A seed is not a database reset mechanism.** `make seed` is safe to rerun and
+never deletes anything: it inserts only what is missing and never overwrites
+administrator-edited names, descriptions, icons, or dates. These are
+administrative containers only — no participants, mentors, or projects are
+created.
+
+Execution is tracked once per seed in a `seed_executions` table. A seed that has
+already executed is a no-op on later runs, so a standard program an administrator
+later deletes is **not** silently recreated. Each run takes a PostgreSQL
+transaction-level advisory lock and commits its data together with its execution
+record, so concurrent `make seed` invocations are safe and a failure rolls the
+whole run back (leaving nothing recorded, so it can be retried).
+
+Edition status is a temporal value computed from the edition's dates against the
+current UTC date (`upcoming`/`active`/`finished`); it is not stored or set
+manually.
+
+### Deleting programs and editions
+
+Superadmins can delete programs and editions from the administration UI (a
+discreet Delete action on each program row, the program detail screen, and the
+edition detail screen) or via the admin API. Deletion is **empty-only** and
+enforced in the backend inside a transaction:
+
+- A program can be deleted only when it has **no editions** (standard programs
+  included — there is no special permanent-protection rule; an empty standard
+  program is deletable).
+- An edition can be deleted only when it has **no projects, participants, or
+  mentors**.
+
+Attempting to delete a non-empty program/edition returns `409 Conflict` and the
+UI shows the reason. Deletion never cascades business data. Because deletion is
+tracked against the once-only seed execution record above, a deleted standard
+program stays deleted even if `make seed` runs again.
+
+### Development-only data cleanup
+
+Early development left a couple of obsolete program rows behind. A **dev-only**,
+tightly-scoped cleanup command can remove exactly those known records
+(slugs `2026` and `internship`) and nothing else:
+
+```bash
+# Inspect what would be removed (default: dry run, deletes nothing)
+docker compose exec api python -m app.cli.cleanup_dev_programs
+
+# Actually delete, after reviewing the report
+docker compose exec api python -m app.cli.cleanup_dev_programs --confirm
+```
+
+This command is a controlled maintenance tool, not part of normal operation. It
+only ever targets the exact obsolete slugs, refuses to touch standard programs,
+refuses to delete anything that has dependent business data, defaults to a dry
+run, and requires `--confirm` to act. It must never run automatically — not at
+startup, not in migrations, and not during deployment.
+
 ### Database
 
 PostgreSQL schema changes are managed with Alembic.
@@ -139,3 +216,10 @@ local use. Real `.env` files are git-ignored and must never be committed.
 
 PostgreSQL 17 runs as the `db` service with a named persistent volume and is
 **not** published to the host by default.
+
+### User interface language
+
+All user-facing interface text is in English. There is no internationalization
+(i18n) framework yet; UI strings live inline in the Vue components and are kept
+reasonably organized. Introducing i18n infrastructure is a future decision, not
+a Milestone 1 concern.

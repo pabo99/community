@@ -1,14 +1,13 @@
 """Persistence for Program, Edition, and Project.
 
-Minimal create/get/list primitives for the M1-08 domain, sufficient for tests
-and the upcoming M1-09 admin API. No business logic and no commits; the caller
-owns the transaction boundary (see app/db/session.py).
+Read/list primitives plus simple staged creates for the M1-10 domain. No
+business logic (slug/date/provenance generation lives in the service) and no
+commits; the caller owns the transaction boundary.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,10 +25,7 @@ class ProgramRepository:
 
     # --- Program -------------------------------------------------------------
 
-    def create_program(
-        self, *, slug: str, name: str, kind: str, description: str | None = None
-    ) -> Program:
-        program = Program(slug=slug, name=name, kind=kind, description=description)
+    def add_program(self, program: Program) -> Program:
         self._session.add(program)
         return program
 
@@ -44,28 +40,7 @@ class ProgramRepository:
 
     # --- Edition -------------------------------------------------------------
 
-    def create_edition(
-        self,
-        *,
-        program: Program,
-        slug: str,
-        name: str,
-        status: str,
-        starts_on: date | None = None,
-        ends_on: date | None = None,
-        source: str,
-        external_id: str | None = None,
-    ) -> Edition:
-        edition = Edition(
-            program=program,
-            slug=slug,
-            name=name,
-            status=status,
-            starts_on=starts_on,
-            ends_on=ends_on,
-            source=source,
-            external_id=external_id,
-        )
+    def add_edition(self, edition: Edition) -> Edition:
         self._session.add(edition)
         return edition
 
@@ -82,10 +57,7 @@ class ProgramRepository:
 
     # --- Project -------------------------------------------------------------
 
-    def create_project(
-        self, *, edition: Edition, slug: str, name: str, description: str | None = None
-    ) -> Project:
-        project = Project(edition=edition, slug=slug, name=name, description=description)
+    def add_project(self, project: Project) -> Project:
         self._session.add(project)
         return project
 

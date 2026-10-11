@@ -272,6 +272,74 @@ not introduce a temporary Project model inside M1-07b.)
 
 ---
 
+### M1-10 redesign — simplified Program/Edition domain
+
+After initial M1-08/M1-09/M1-10 implementation, product review simplified the
+domain (see product-design §20.2.1). Changes, applied across schema, API,
+bootstrap, and UI:
+
+- Program: dropped the redundant `kind` enum; added a controlled `icon`
+  identifier (CHECK allow-list) and an `is_standard` flag; slugs are generated
+  from the name.
+- Edition: identity is a calendar-period slug (`YYYY`/`YYYY-1`/`YYYY-2`) created
+  from year + period; dates are now required and default from the period;
+  removed the stored `status` enum in favor of a computed temporal status
+  (`upcoming`/`active`/`finished`, UTC reference); `source`/`external_id`
+  retained for future integration but the admin API always creates
+  `source=community`.
+- Idempotent, version-controlled seed runner (`make seed`) seeds the four
+  standard programs and their initial 2026 editions, reusing existing records
+  and never overwriting admin edits.
+- Migration `2c7f1e9b4a30` evolves the schema and safely backfills existing
+  edition dates from the slug period, failing clearly if an edition has missing
+  dates and a slug that does not encode a period.
+
+### M1-10 refinement set — seeding, deletion, and admin UX
+
+A manual-review pass over the redesign tightened several behaviors (see
+product-design §20.2.1 and §24, technical-design §20). Applied across schema,
+API, CLI, and UI:
+
+- **English-only UI.** All user-facing text is English; no i18n framework yet,
+  strings kept inline and reasonably organized.
+- **Seed execution tracking.** A `seed_executions` table records each seed by a
+  stable id, so a seed runs at most once. The standard-catalog seed therefore
+  never recreates a standard program an administrator later deleted. The runner
+  takes a transaction-level advisory lock and commits data + execution record
+  together (atomic, concurrency-safe, repeat-safe). `make seed` replaces the old
+  `make bootstrap-programs`.
+- **Empty-only deletion.** Superadmins delete programs/editions (standard
+  included — no `is_standard`-based protection) only when empty: a program with
+  no editions, an edition with no projects/participants/mentors. Enforced in
+  backend transactions backed by `ON DELETE RESTRICT`; `409 Conflict` otherwise;
+  never cascades business data. Exposed via `DELETE` endpoints and discreet
+  Delete actions on the program row, program detail, and edition detail, each
+  with a confirmation dialog.
+- **Dev-only controlled cleanup.** `python -m app.cli.cleanup_dev_programs`
+  removes only the exact obsolete dev rows (slugs `2026`, `internship`):
+  inspect/dry-run by default, `--confirm` to act, refuses standard programs and
+  anything with dependent data, and must never run in production, migrations,
+  startup, or deployment.
+- **Program detail form.** Permanently visible, read-only until Edit, then
+  edit-in-place with Save/Cancel (Cancel restores saved values). Short fields in
+  two columns, description and editions table full width, responsive, slug
+  immutable.
+- **Edition year dropdown.** Create uses a year `Select` (current year ±5,
+  default current); period choices retained; slug and suggested dates derive
+  from year + period; changing year/period refreshes suggested dates without
+  overwriting dates the user customized. The year is the edition's identity, not
+  a restriction on its operational dates.
+- **Navigation.** A reusable admin layout with a left sidebar (Programs active;
+  Users/Roles/Settings shown as disabled placeholders, no fake routes); the
+  global top navigation lists workspaces (Administration gated on superadmin),
+  with Programs moved out of the global bar into the admin sidebar. Backend
+  guards unchanged.
+- **Breadcrumbs.** `Administration / Programs / <program name> / <edition slug>`
+  across admin screens, with working parent links, human-readable names (not
+  UUIDs), and no separate "Edit edition" level.
+- **Institutions.** Documented as a future direction only (product-design §24);
+  not implemented in this set.
+
 ### M1-09 — Implement admin Program/Edition REST API
 
 Expose the first real product-management API.
